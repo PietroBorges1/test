@@ -1,0 +1,409 @@
+diff -ruN orig/tech-news-1.6.0/lib/home_page.dart tech-news-1.6.0/lib/home_page.dart
+--- orig/tech-news-1.6.0/lib/home_page.dart	2026-11-16 22:54:59.000000000 +0000
++++ tech-news-1.6.0/lib/home_page.dart	2026-11-24 13:09:46.933572313 +0000
+@@ -11,7 +11,8 @@
+ // ======================================================
+ // TELA INICIAL
+ // Os temas favoritos do usuário ficam em foco: "Para você" mostra só eles,
+-// com um carrossel de destaques e uma seção para cada tema.
++// com uma lista de destaques e uma seção para cada tema. O cabeçalho (logo,
++// busca e perfil) fica fixo no topo.
+ // ======================================================
+ 
+ const String forYouKey = 'Para você';
+@@ -139,45 +140,58 @@
+ 
+   @override
+   Widget build(BuildContext context) {
++    final margin = pagePadding(context);
++
+     return SafeArea(
+-      child: RefreshIndicator(
+-        onRefresh: load,
+-        child: ListView(
+-          physics: const AlwaysScrollableScrollPhysics(),
+-          padding: pagePadding(context, top: 16),
+-          children: [
+-            _Greeting(
++      child: Column(
++        children: [
++          // Logo, busca e perfil ficam fixos no topo; o resto rola por baixo.
++          Padding(
++            padding: EdgeInsets.fromLTRB(margin.left, 16, margin.right, 8),
++            child: _HomeHeader(
+               profile: widget.profile,
+               onSearch: widget.onOpenExplore,
+               onProfile: widget.onOpenProfile,
+             ),
++          ),
++          Expanded(
++            child: RefreshIndicator(
++              onRefresh: load,
++              child: ListView(
++                physics: const AlwaysScrollableScrollPhysics(),
++                padding: pagePadding(context, top: 8),
++                children: [
++                  _Greeting(profile: widget.profile),
++
++                  const SizedBox(height: 20),
++
++                  _TopicTabs(
++                    favorites: favorites,
++                    selected: selected,
++                    onSelect: select,
++                  ),
+ 
+-            const SizedBox(height: 20),
++                  const SizedBox(height: 22),
+ 
+-            _TopicTabs(
+-              favorites: favorites,
+-              selected: selected,
+-              onSelect: select,
++                  if (loading)
++                    const LoadingState()
++                  else if (error != null)
++                    EmptyState(
++                      emoji: '📡',
++                      title: 'Não conseguimos buscar as notícias',
++                      subtitle: error!,
++                      actionLabel: 'Tentar novamente',
++                      onAction: load,
++                    )
++                  else if (selected == forYouKey)
++                    ..._buildForYou(context)
++                  else
++                    ..._buildTopicList(context),
++                ],
++              ),
+             ),
+-
+-            const SizedBox(height: 22),
+-
+-            if (loading)
+-              const LoadingState()
+-            else if (error != null)
+-              EmptyState(
+-                emoji: '📡',
+-                title: 'Não conseguimos buscar as notícias',
+-                subtitle: error!,
+-                actionLabel: 'Tentar novamente',
+-                onAction: load,
+-              )
+-            else if (selected == forYouKey)
+-              ..._buildForYou(context)
+-            else
+-              ..._buildTopicList(context),
+-          ],
+-        ),
++          ),
++        ],
+       ),
+     );
+   }
+@@ -199,8 +213,14 @@
+     return [
+       if (featured.isNotEmpty) ...[
+         const SectionHeader(title: 'Destaques para você'),
+-        Appear(child: _HighlightsCarousel(articles: featured)),
+-        const SizedBox(height: 28),
++        Appear(
++          child: Column(
++            children: [
++              for (final article in featured) HighlightCard(article: article),
++            ],
++          ),
++        ),
++        const SizedBox(height: 12),
+       ],
+ 
+       for (final category in favorites)
+@@ -274,20 +294,67 @@
+ }
+ 
+ // ======================================================
+-// SAUDAÇÃO
++// CABEÇALHO FIXO: logo à esquerda, busca e perfil à direita
+ // ======================================================
+ 
+-class _Greeting extends StatelessWidget {
++class _HomeHeader extends StatelessWidget {
+   final UserProfile profile;
+   final VoidCallback onSearch;
+   final VoidCallback onProfile;
+ 
+-  const _Greeting({
++  const _HomeHeader({
+     required this.profile,
+     required this.onSearch,
+     required this.onProfile,
+   });
+ 
++  @override
++  Widget build(BuildContext context) {
++    final colors = context.colors;
++
++    return Row(
++      children: [
++        const Expanded(
++          child: Align(
++            alignment: Alignment.centerLeft,
++            child: TechNewsLogo(height: 36),
++          ),
++        ),
++        IconButton.filledTonal(
++          tooltip: 'Buscar',
++          onPressed: onSearch,
++          icon: const Icon(Icons.search_rounded),
++        ),
++        const SizedBox(width: 6),
++        GestureDetector(
++          onTap: onProfile,
++          child: CircleAvatar(
++            radius: 22,
++            backgroundColor: colors.primary,
++            child: Text(
++              profile.initial,
++              style: TextStyle(
++                color: colors.onPrimary,
++                fontWeight: FontWeight.w900,
++                fontSize: 18,
++              ),
++            ),
++          ),
++        ),
++      ],
++    );
++  }
++}
++
++// ======================================================
++// SAUDAÇÃO (rola junto com o conteúdo)
++// ======================================================
++
++class _Greeting extends StatelessWidget {
++  final UserProfile profile;
++
++  const _Greeting({required this.profile});
++
+   String get _partOfDay {
+     final hour = DateTime.now().hour;
+     if (hour < 12) return 'Bom dia';
+@@ -306,43 +373,10 @@
+   @override
+   Widget build(BuildContext context) {
+     final colors = context.colors;
+-    // Topo: logo à esquerda, busca e perfil à direita.
+-    // Abaixo: a saudação numa linha só ("Boa tarde, Levi").
++
+     return Column(
+       crossAxisAlignment: CrossAxisAlignment.start,
+       children: [
+-        Row(
+-          children: [
+-            const Expanded(
+-              child: Align(
+-                alignment: Alignment.centerLeft,
+-                child: TechNewsLogo(height: 36),
+-              ),
+-            ),
+-            IconButton.filledTonal(
+-              tooltip: 'Buscar',
+-              onPressed: onSearch,
+-              icon: const Icon(Icons.search_rounded),
+-            ),
+-            const SizedBox(width: 6),
+-            GestureDetector(
+-              onTap: onProfile,
+-              child: CircleAvatar(
+-                radius: 22,
+-                backgroundColor: colors.primary,
+-                child: Text(
+-                  profile.initial,
+-                  style: TextStyle(
+-                    color: colors.onPrimary,
+-                    fontWeight: FontWeight.w900,
+-                    fontSize: 18,
+-                  ),
+-                ),
+-              ),
+-            ),
+-          ],
+-        ),
+-        const SizedBox(height: 20),
+         Text.rich(
+           TextSpan(
+             children: [
+@@ -513,70 +547,6 @@
+     );
+   }
+ }
+-
+-// ======================================================
+-// CARROSSEL DE DESTAQUES
+-// ======================================================
+-
+-class _HighlightsCarousel extends StatefulWidget {
+-  final List<NewsArticle> articles;
+-
+-  const _HighlightsCarousel({required this.articles});
+-
+-  @override
+-  State<_HighlightsCarousel> createState() => _HighlightsCarouselState();
+-}
+-
+-class _HighlightsCarouselState extends State<_HighlightsCarousel> {
+-  final controller = PageController(viewportFraction: 0.92);
+-  int page = 0;
+-
+-  @override
+-  void dispose() {
+-    controller.dispose();
+-    super.dispose();
+-  }
+-
+-  @override
+-  Widget build(BuildContext context) {
+-    final colors = context.colors;
+-
+-    return Column(
+-      children: [
+-        SizedBox(
+-          height: 270,
+-          child: PageView.builder(
+-            controller: controller,
+-            padEnds: false,
+-            itemCount: widget.articles.length,
+-            onPageChanged: (value) => setState(() => page = value),
+-            itemBuilder: (context, index) => Padding(
+-              padding: const EdgeInsets.only(right: 12),
+-              child: FeaturedNewsCard(article: widget.articles[index]),
+-            ),
+-          ),
+-        ),
+-        const SizedBox(height: 12),
+-        Row(
+-          mainAxisAlignment: MainAxisAlignment.center,
+-          children: [
+-            for (var i = 0; i < widget.articles.length; i++)
+-              AnimatedContainer(
+-                duration: const Duration(milliseconds: 200),
+-                margin: const EdgeInsets.symmetric(horizontal: 3),
+-                width: i == page ? 20 : 7,
+-                height: 7,
+-                decoration: BoxDecoration(
+-                  color: i == page ? colors.primary : colors.outlineVariant,
+-                  borderRadius: BorderRadius.circular(4),
+-                ),
+-              ),
+-          ],
+-        ),
+-      ],
+-    );
+-  }
+-}
+ 
+ // ======================================================
+ // DICA: ADICIONAR TEMA AOS FAVORITOS
+diff -ruN orig/tech-news-1.6.0/lib/widgets.dart tech-news-1.6.0/lib/widgets.dart
+--- orig/tech-news-1.6.0/lib/widgets.dart	2026-11-16 22:54:59.000000000 +0000
++++ tech-news-1.6.0/lib/widgets.dart	2026-11-24 13:09:46.932884999 +0000
+@@ -294,6 +294,87 @@
+ }
+ 
+ // ======================================================
++// CARTÃO DE DESTAQUE DA TELA INICIAL
++// Imagem em cima; embaixo o tema, o título, o horário e o botão de salvar.
++// ======================================================
++
++class HighlightCard extends StatelessWidget {
++  final NewsArticle article;
++
++  const HighlightCard({super.key, required this.article});
++
++  @override
++  Widget build(BuildContext context) {
++    final colors = context.colors;
++
++    return Padding(
++      padding: const EdgeInsets.only(bottom: 16),
++      child: Pressable(
++        child: Material(
++          color: colors.surfaceContainerLowest,
++          elevation: 1.5,
++          shadowColor: Colors.black38,
++          borderRadius: BorderRadius.circular(22),
++          clipBehavior: Clip.antiAlias,
++          child: InkWell(
++            onTap: () => openArticle(context, article),
++            child: Column(
++              crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                AspectRatio(
++                  aspectRatio: 16 / 7,
++                  child: NewsImage(article: article, iconSize: 48),
++                ),
++                Padding(
++                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
++                  child: Column(
++                    crossAxisAlignment: CrossAxisAlignment.start,
++                    children: [
++                      TopicPill(category: article.category),
++                      const SizedBox(height: 10),
++                      Text(
++                        article.title,
++                        maxLines: 3,
++                        overflow: TextOverflow.ellipsis,
++                        style: const TextStyle(
++                          fontSize: 16.5,
++                          height: 1.25,
++                          fontWeight: FontWeight.w900,
++                        ),
++                      ),
++                    ],
++                  ),
++                ),
++                Padding(
++                  padding: const EdgeInsets.fromLTRB(16, 0, 6, 4),
++                  child: Row(
++                    children: [
++                      Expanded(
++                        child: Text(
++                          article.time,
++                          maxLines: 1,
++                          overflow: TextOverflow.ellipsis,
++                          style: TextStyle(
++                            color: colors.onSurfaceVariant,
++                            fontSize: 12.5,
++                            fontWeight: FontWeight.w600,
++                          ),
++                        ),
++                      ),
++                      BookmarkButton(article: article),
++                    ],
++                  ),
++                ),
++              ],
++            ),
++          ),
++        ),
++      ),
++    );
++  }
++}
++
++// ======================================================
+ // CARTÃO COMPACTO (LISTAS HORIZONTAIS)
+ // ======================================================
+ 
+diff -ruN orig/tech-news-1.6.0/test/layout_test.dart tech-news-1.6.0/test/layout_test.dart
+--- orig/tech-news-1.6.0/test/layout_test.dart	2026-11-16 22:54:59.000000000 +0000
++++ tech-news-1.6.0/test/layout_test.dart	2026-11-24 13:09:46.934026478 +0000
+@@ -122,6 +122,7 @@
+             children: [
+               SizedBox(height: 250, child: FeaturedNewsCard(article: article)),
+               const SizedBox(height: 12),
++              HighlightCard(article: article),
+               SizedBox(height: 258, child: CompactNewsCard(article: article)),
+               const SizedBox(height: 12),
+               NewsListTile(article: article),
