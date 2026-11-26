@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # tech_news
 
 Aplicativo mobile de notícias sobre tecnologia desenvolvido como parte do Projeto A3 do curso de Redes de Computadores.
@@ -159,3 +160,6 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+=======
+# test
+>>>>>>> a9ec0948fc60b302da23f8762fa0d597ee334d39
