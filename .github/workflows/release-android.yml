@@ -1,0 +1,105 @@
+# Publica um PACOTE de atualização do app Android.
+# As mudanças vão se acumulando na main; quando o pacote estiver pronto:
+#   1. aumente "version:" no pubspec.yaml e faça push;
+#   2. GitHub > Actions > "Release Android" > Run workflow.
+# (Também dispara com push de tag "v<versão>", ex.: git tag v1.1.0.)
+# Resultado: uma Release no GitHub com o APK. O app instalado encontra essa
+# Release (lib/app_update.dart) e obriga a atualização.
+# O site (iPhone) é publicado por web.yml quando a main recebe o pacote.
+name: Release Android
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # necessário para criar a Release (e a tag)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Descobrir a versão do pacote
+        id: version
+        run: |
+          PUBSPEC_VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
+          TAG="v$PUBSPEC_VERSION"
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+            echo "::error::A tag é $GITHUB_REF_NAME, mas o pubspec.yaml está em $PUBSPEC_VERSION. Atualize o 'version:' antes de criar a tag."
+            exit 1
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
+            echo "::error::A versão $PUBSPEC_VERSION já foi publicada. Aumente o 'version:' no pubspec.yaml antes de publicar um novo pacote."
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6   # mesma versão usada no desenvolvimento local
+          cache: true
+
+      - name: Preparar chave de assinatura
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Faltam os Secrets da chave de assinatura (veja o README)."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/release.jks
+          cat > android/key.properties <<EOF
+          storeFile=release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEYSTORE_PASSWORD
+          EOF
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Gerar a arte da abertura
+        # Recria assets/images/abertura_*.jpg a partir de design/abertura/abertura.html.
+        run: |
+          pip install --quiet pillow
+          python design/abertura/gerar.py
+
+      - run: flutter pub get
+
+      - name: Rodar os testes
+        run: flutter test
+
+      - name: Gerar APK
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+        run: |
+          # Com a variável SUPABASE_URL definida no GitHub, ela substitui o proxy padrão.
+          EXTRA=""
+          if [ -n "$SUPABASE_URL" ]; then EXTRA="--dart-define=SUPABASE_URL=$SUPABASE_URL"; fi
+          # Ofusca o código Dart (dificulta engenharia reversa do APK).
+          flutter build apk --release --obfuscate --split-debug-info=build/symbols $EXTRA
+          mv build/app/outputs/flutter-apk/app-release.apk tech-news.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Tech News ${{ steps.version.outputs.tag }}
+          body: Pacote de atualização ${{ steps.version.outputs.tag }}.
+          files: tech-news.apk
+

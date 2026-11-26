@@ -1,0 +1,38 @@
+# Verificação a cada push: analisa o código e roda os testes.
+# Não publica nada — serve para saber se o pacote em construção está saudável.
+name: Verificação
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.6   # mesma versão usada no desenvolvimento local
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Analisar o código
+        run: flutter analyze --no-fatal-infos
+
+      - name: Rodar os testes
+        run: flutter test
+
+      # Confere a parte Android (código nativo, manifesto, ícone). Sem a chave
+      # de release, assina com a chave de debug; o APK não é publicado.
+      - name: Compilar o APK
+        run: flutter build apk --debug
